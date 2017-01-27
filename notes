@@ -1,0 +1,164 @@
+* list and dict
+  - On GitHub, language = Python:
+    + list -> 8.9M results
+    + dict -> 33.3M results
+  - Used *a lot*
+  - (Almost) everyone at least roughly knows how they work
+
+* list
+  - A sequence of values (read: objects), 0-indexed
+  - [], list(), [i for i in range(42)], list((1, 2, 3))
+  - O(1) amortized insert, O(1) random access, O(n) deletion
+  - Vector! "Resizeable array", over-allocate to allow fast insert
+  - Invariant:
+    + 0 <= len(list) <= capacity
+
+* create a new list
+  - [], list() -> array with size = 0, capacity = 0
+  - [0, 1, 2]  -> array with size = 3, capacity = 3
+  - reference reuse scheme: up to 80 references
+
+* append to a list
+  - resize(len(list) + 1) & set item
+  - resize(size) if not capacity/2 <= size <= capacity
+  - new_capacity = (size / 8) + (size < 9 ? 3 : 6) + size
+    + 0, 4, 8, 16, 25, 35, 46, 58, 72, 88
+    + Growth rate: ~12.5%
+    + Slowly grow/shrink: avoid wasting memory but still ~O(1) insert
+  - max list size = `sys.maxsize` = `(size_t)(-1) >> 1` = 9223372036854775807 on 64-bit
+
+* list comprehension, already known size
+  - [i for i in range(5)]
+    + acts a a for-loop, performs .append
+
+  - [0, 1, 2, 3, 4], list((0, 1, 2, 3, 4))
+    + size known at list creation
+    + size = capacity = 5
+
+* remove from a list
+  - list.pop([i])
+  - i == len(list) - 1
+    + resize(len(list) - 1)
+  - i < len(list) - 1
+    + list[i:] = list[i+1:] (memmove, ~ like memcpy but more powerful, handles overlaps, memcpy overlap is undefined behavior)
+    + resize(len(list) - 1)
+  - list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    + list.pop()
+      * [0, 1, 2, 3, 4, 5, 6, 7, 8, /9/]
+      * [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    + list.pop(3)
+      * [0, 1, 2, 4, 5, 6, 7, 8, 9, /9/]
+      * [0, 1, 2, 4, 5, 6, 7, 8, 9]
+  - list.pop(0) -> use deque instead :)
+  - slicing is really powerful!
+    + list[1:9] = [42, 43] -> [0, 42, 43, 9]
+    + list[1:1] = [42, 43] -> [0, 42, 43, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    + almost nobody uses this (and looks really hacky anyway)
+
+* dict
+  - dict = dictionary
+  - Store (key, value) pairs
+  - {}, dict(), {str(i): i for i in range(10)}, dict([('1', 1), ('2', 2)])
+  - Use cases in Python
+    + kwargs (1 write, ~1 read, small length, frequent, keys are strings)
+    + class method lookup (~1 write, many reads, any length but share 8-16 elements, keys are strings)
+    + attribute lookup & global variables (many writes, many reads, any length (almost always <= 10 elements), keys are strings)
+    + builtins (__builtins__.__dict__) (~0 writes, many reads, length ~150, keys are strings)
+    + uniquification (remove duplicates, counters, ...) (many writes, 1 read, any length, any key)
+    + membership testing (`something in somewhere`) (~1 write, many reads, any length, any key)
+    + other use (any writes, any reads, any size, any key, any deletion whereas others almost never have deletions)
+
+* dict history
+  - implementation changed a lot over time (3.6 has a shiny new implementation, taken from [PyPy])
+  - ordering (`.keys()`, `.values()`, `.items()` return elements in order of insertion)
+  - on top of that: memory efficient (re-use keys when possible -> dict with same keys and different values -> e.g: attributes)
+    + split table (shared keys), PEP412
+    + combined table
+      * most detailed here
+
+* dict
+  - O(1) access time on average
+  - Fast access? arrays!
+  - Need a way to have: dict key <-> list index
+  - Hashing.
+
+"""
+def bits(n):
+  return bin(n + 2 ** 63)[2:].zfill(64)
+"""
+
+* hashing
+  - function used to map data from arbitrary size to data of (almost always) fixed size (in Python, {32,64}-bits integers)
+  - hash(42), hash("never gonna..."), hash(3.14)
+  - arbitrary -> fixed => collisions may happen
+  - hash(-1) == hash(-2) == -2 (because -1 is used for error handling in C Python, everything that hashes to -1 -> -2)
+  - (there is no "perfect" hash function) we want: uniform (spread across all the range of possible hashes, similar values might dissimilar hashes), deterministic
+  - bits(hash("hello")), bits(hash("hallo"))
+  - bits(hash("hello")) == bits(hash("hello")) == bits(hash("hello"))
+
+* dict
+  - dict key -> hash(key) -> array index!
+  - We know array have good access/insert properties
+    + But can we actually represent a dict using arrays?
+    + Yes.
+  - dict = 2 arrays (indices, entries)
+
+* dict as lists
+  - Index | EntryIndex ; EntryIndex | Hash | Key | Value
+  - empty dictionary = indices array of length 8, entries array (dict capacity = 8)
+  - categories = {}
+
+* dict using hash
+  - key index = last bits of hash(key)
+  - initial capacity = 8 -> last 3 bits
+
+* insert in a dict
+  - businesses['food'] = 4000
+  - bits(hash('food')) = '0110111010000010101110011110001011001010011000101100000110001100'
+  - bits(hash('food'))[-3:] = '100'
+  - Index | EntryIndex
+  -   000 |
+  ...
+  -   100 | 0
+  - EntryIndex | Hash | Key | Value
+  -         0  | .100 | fod | 4000
+
+* insert in a dict (cont)
+  - what if keys collide? (aka. want the same slot)
+    + open addressing (there are other methods, e.g: chaining, but Python chose this one to avoid using malloc a lot)
+    + i = (5 * i + 1) % capacity
+      * assured to loop on every integer between 0 and (capacity - 1)
+    + a bit more complicated (actually user higher bits of hash), but that's the principle
+
+* lookup in a dict
+  - categories['food']
+  - hash key, find index, and...?
+    + jump until you find an empty slot
+    + slot with hash == my_hash and key == my_key -> \o/
+    + empty slot -> key not present
+
+* deleting from a dict
+  - del categories['scuba diving']
+  - Simply make the slot empty?
+    + No, otherwise we won't be able to access keys that collided with it!
+    + <dummy> key
+
+* resizing a dict
+  - used, size
+  - USABLE_FRACTION = 2/3 len(indices)
+  - size > USABLE_FRACTION -> resize
+    + size = 2 * used + size / 2
+    + only insertions (used = 2/3 size)
+      * size = (11/6) size
+    + #insertions == #deletions (used = 0)
+    + size = NEXT_POWER_OF_TWO(size)
+      * so that we can truncate hashes
+
+* ordering
+  - `.keys()`, `.values()`, `.items()` -> iterate over `entries`
+
+* split table
+  - shared `indices` array
+  - each instance has its `entries` array
+
+* wrap-up
